@@ -239,7 +239,7 @@ export function Shugiin2026Welcome() {
             >
               プロンプト
             </a>
-            を公開しています。
+            を公開しています。開発にお力添えいただける方は、お気軽にお声がけください。
           </p>
         </section>
       </div>
