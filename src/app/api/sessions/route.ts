@@ -4,7 +4,7 @@ import { z } from "zod";
 import { DEFAULT_PHASE_PROFILE } from "@/lib/utils/phase";
 
 const createSessionSchema = z.object({
-  purpose: z.string().min(1, "目的を入力してください").max(500),
+  purpose: z.string().min(1, "目的を入力してください").max(5000),
   backgroundText: z.string().max(50000).optional(),
   title: z.string().max(100).optional(),
   reportInstructions: z.string().max(10000).optional(),
