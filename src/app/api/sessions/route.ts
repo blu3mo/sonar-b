@@ -8,6 +8,7 @@ const createSessionSchema = z.object({
   backgroundText: z.string().max(50000).optional(),
   title: z.string().max(100).optional(),
   reportInstructions: z.string().max(10000).optional(),
+  presetId: z.string().uuid().optional(),
 });
 
 export async function POST(request: NextRequest) {
@@ -27,6 +28,7 @@ export async function POST(request: NextRequest) {
         phase_profile: DEFAULT_PHASE_PROFILE,
         status: "active",
         current_question_index: 0,
+        preset_id: validated.presetId || null,
       })
       .select("id")
       .single();

@@ -35,6 +35,24 @@ export default function HomePage() {
           <SessionForm />
         </div>
 
+        {/* プリセット作成 */}
+        <Link
+          href="/create"
+          className="block rounded-xl p-4 mb-6 bg-gradient-to-r from-emerald-50 to-teal-50 border border-emerald-100 hover:from-emerald-100 hover:to-teal-100 transition-all"
+        >
+          <div className="flex items-center justify-between">
+            <div>
+              <p className="text-xs text-emerald-600 font-medium mb-1">
+                アンケート機能
+              </p>
+              <p className="text-sm font-semibold text-gray-900">
+                プリセットを作成して意見を集める
+              </p>
+            </div>
+            <span className="text-emerald-400 text-lg">→</span>
+          </div>
+        </Link>
+
         <SessionList />
       </div>
     </main>
