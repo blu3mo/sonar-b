@@ -35,7 +35,7 @@ export function PresetCreator() {
 
       if (!response.ok) {
         const data = await response.json().catch(() => ({}));
-        throw new Error(data.error || "プリセットの作成に失敗しました");
+        throw new Error(data.error || "アンケートの作成に失敗しました");
       }
 
       const { preset } = await response.json();
@@ -63,7 +63,7 @@ export function PresetCreator() {
             </svg>
           </div>
           <h2 className="text-lg font-semibold text-gray-900">
-            プリセットを作成しました
+            アンケートを作成しました
           </h2>
         </div>
 
@@ -188,7 +188,7 @@ export function PresetCreator() {
         disabled={isSubmitting || !title.trim() || !purpose.trim()}
         className="w-full py-3 px-4 bg-blue-600 text-white rounded-lg font-medium hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
       >
-        {isSubmitting ? "作成中..." : "プリセットを作成する"}
+        {isSubmitting ? "作成中..." : "アンケートを作成する"}
       </button>
     </form>
   );
