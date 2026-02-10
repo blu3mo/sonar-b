@@ -9,9 +9,9 @@ export default function HomePage() {
           <Image
             src="/logo.png"
             alt="倍速アンケート"
-            width={160}
+            width={200}
             height={40}
-            className="mx-auto mb-4"
+            className="mx-auto mb-2"
             priority
           />
           <p className="text-gray-600 text-sm">
