@@ -10,16 +10,21 @@ export interface PhaseProfile {
 
 export const DEFAULT_REPORT_TARGET = 25;
 
+/**
+ * Phase cycle for batches after the initial exploration phase.
+ * deep-dive → reframing → exploration, repeating.
+ */
 const PHASE_CYCLE: Array<"exploration" | "deep-dive" | "reframing"> = [
-  "exploration",
-  "reframing",
   "deep-dive",
+  "reframing",
+  "exploration",
 ];
 
 /**
  * Generate a phase profile for the given report target.
- * First 2 batches are always "exploration", then cycles through
- * exploration -> reframing -> deep-dive.
+ *
+ * Batch 1-2 (questions 1-10): exploration
+ * Batch 3+: deep-dive → reframing → exploration (repeating cycle)
  */
 export function generatePhaseProfile(reportTarget: number = DEFAULT_REPORT_TARGET): PhaseProfile {
   const batchCount = reportTarget / 5;
@@ -28,13 +33,9 @@ export function generatePhaseProfile(reportTarget: number = DEFAULT_REPORT_TARGE
   for (let i = 0; i < batchCount; i++) {
     const start = i * 5 + 1;
     const end = (i + 1) * 5;
-
-    let phase: "exploration" | "deep-dive" | "reframing";
-    if (i < 2) {
-      phase = "exploration";
-    } else {
-      phase = PHASE_CYCLE[(i - 2) % PHASE_CYCLE.length];
-    }
+    const phase = i < 2
+      ? "exploration"
+      : PHASE_CYCLE[(i - 2) % PHASE_CYCLE.length];
 
     ranges.push({ start, end, phase });
   }
