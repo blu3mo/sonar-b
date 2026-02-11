@@ -32,7 +32,7 @@ export async function POST(request: NextRequest) {
       p_report_instructions: validated.reportInstructions || null,
       p_og_title: validated.ogTitle || null,
       p_og_description: validated.ogDescription || null,
-      p_key_questions: JSON.stringify(validated.keyQuestions || []),
+      p_key_questions: validated.keyQuestions || [],
     });
 
     if (error || !data || data.length === 0) {
