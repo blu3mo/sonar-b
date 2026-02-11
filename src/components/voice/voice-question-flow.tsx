@@ -171,7 +171,6 @@ export function VoiceQuestionFlow({ sessionId }: VoiceQuestionFlowProps) {
       !processingBatch &&
       answeredCount > prevAnsweredRef.current
     ) {
-      prevAnsweredRef.current = answeredCount;
       const batchIndex = answeredCount / BATCH_SIZE;
       const analysisExists = analyses.some(
         (a) => a.batch_index === batchIndex
@@ -196,7 +195,14 @@ export function VoiceQuestionFlow({ sessionId }: VoiceQuestionFlowProps) {
         if (needsNextBatch) {
           tasks.push(generateNextBatch(nextStartIndex, nextEndIndex));
         }
-        Promise.all(tasks).finally(() => setProcessingBatch(false));
+        Promise.all(tasks)
+          .then(() => {
+            prevAnsweredRef.current = answeredCount;
+          })
+          .finally(() => setProcessingBatch(false));
+      } else {
+        // Nothing to do for this batch — advance ref to avoid re-entry
+        prevAnsweredRef.current = answeredCount;
       }
     }
   }, [
