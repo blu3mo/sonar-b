@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import Link from "next/link";
 import { SurveyReportSection } from "./survey-report-section";
+import { QRCodeSVG } from "qrcode.react";
 
 interface PresetInfo {
   id: string;
@@ -135,6 +136,9 @@ export function AdminDashboard({ token }: { token: string }) {
             onClick={(e) => (e.target as HTMLInputElement).select()}
           />
           <CopyButton text={surveyUrl} />
+        </div>
+        <div className="mt-4 flex justify-center">
+          <QRCodeSVG value={surveyUrl} size={160} />
         </div>
       </div>
 

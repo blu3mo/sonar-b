@@ -129,6 +129,15 @@ export async function POST(
       }
     );
 
+    // Reject if no participant has any answered questions
+    const totalAnswers = participants.reduce((sum, p) => sum + p.qa.length, 0);
+    if (totalAnswers === 0) {
+      return NextResponse.json(
+        { error: "回答データがありません。少なくとも1件の回答が必要です。" },
+        { status: 400 }
+      );
+    }
+
     // Determine next version
     const { data: existingReports } = await supabase
       .from("survey_reports")
