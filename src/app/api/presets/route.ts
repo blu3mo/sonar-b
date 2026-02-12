@@ -27,6 +27,11 @@ export async function POST(request: NextRequest) {
 
     const supabase = await createClient();
 
+    // Get current user (may be null for unauthenticated users)
+    const {
+      data: { user },
+    } = await supabase.auth.getUser();
+
     const { data, error } = await supabase.rpc("create_preset_with_token", {
       p_slug: generateSlug(),
       p_title: validated.title,
@@ -37,6 +42,7 @@ export async function POST(request: NextRequest) {
       p_og_description: validated.ogDescription || null,
       p_key_questions: validated.keyQuestions || [],
       p_report_target: validated.reportTarget || 25,
+      p_user_id: user?.id || null,
     });
 
     if (error || !data || data.length === 0) {
