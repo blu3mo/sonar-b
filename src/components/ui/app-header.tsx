@@ -1,6 +1,6 @@
 import Link from "next/link";
-import Image from "next/image";
 import { ThemeToggle } from "./theme-toggle";
+import { SonarLogo } from "./sonar-logo";
 import { AuthHeader } from "@/components/auth/auth-header";
 
 interface AppHeaderProps {
@@ -39,19 +39,9 @@ export function AppHeader({
             </svg>
           </Link>
         )}
-        {showLogo && (
-          <Link href="/" className="shrink-0">
-            <Image
-              src="/logo.png"
-              alt="倍速アンケート"
-              width={120}
-              height={24}
-              priority
-            />
-          </Link>
-        )}
+        {showLogo && <SonarLogo />}
         {title && (
-          <h1 className="text-lg font-bold text-gray-900 truncate">{title}</h1>
+          <h1 className="text-lg font-bold text-[var(--foreground)] truncate">{title}</h1>
         )}
       </div>
       <div className="flex items-center gap-2 shrink-0">
