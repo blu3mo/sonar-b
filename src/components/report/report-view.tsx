@@ -142,6 +142,11 @@ export function ReportView({
         </div>
       </div>
 
+      {/* Collapsible answer log */}
+      {questions.length > 0 && (
+        <AnswerLog questions={questions} getAnswerLabel={getAnswerLabel} />
+      )}
+
       <div className="prose prose-blue max-w-none prose-headings:text-gray-900 prose-p:text-gray-700 prose-li:text-gray-700">
         <ReactMarkdown
           components={{
@@ -177,6 +182,61 @@ export function ReportView({
           {normalizedReportText}
         </ReactMarkdown>
       </div>
+    </div>
+  );
+}
+
+function AnswerLog({
+  questions,
+  getAnswerLabel,
+}: {
+  questions: QuestionData[];
+  getAnswerLabel: (q: QuestionData) => string | null;
+}) {
+  const [isOpen, setIsOpen] = useState(false);
+  const answeredQuestions = questions.filter((q) => q.selectedOption !== null);
+
+  return (
+    <div className="mb-8 border border-gray-200 rounded-xl overflow-hidden">
+      <button
+        onClick={() => setIsOpen(!isOpen)}
+        className="w-full px-4 py-3 flex items-center justify-between bg-gray-50 hover:bg-gray-100 transition-colors"
+      >
+        <span className="text-sm font-medium text-gray-700">
+          回答ログ（{answeredQuestions.length}問）
+        </span>
+        <svg
+          className={`w-4 h-4 text-gray-400 transition-transform ${
+            isOpen ? "rotate-180" : ""
+          }`}
+          fill="none"
+          viewBox="0 0 24 24"
+          stroke="currentColor"
+        >
+          <path
+            strokeLinecap="round"
+            strokeLinejoin="round"
+            strokeWidth={2}
+            d="M19 9l-7 7-7-7"
+          />
+        </svg>
+      </button>
+
+      {isOpen && (
+        <div className="divide-y divide-gray-100">
+          {answeredQuestions.map((q) => (
+            <div key={q.question_index} className="px-4 py-3">
+              <p className="text-xs text-gray-400 mb-0.5">
+                Q{q.question_index}
+              </p>
+              <p className="text-sm text-gray-700">{q.statement}</p>
+              <p className="text-sm font-medium text-gray-900 mt-1">
+                → {getAnswerLabel(q) ?? "未回答"}
+              </p>
+            </div>
+          ))}
+        </div>
+      )}
     </div>
   );
 }
