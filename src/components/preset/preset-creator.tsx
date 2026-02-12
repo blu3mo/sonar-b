@@ -9,16 +9,28 @@ interface CreatedPreset {
   adminToken: string;
 }
 
+type QuestionType = 'radio' | 'checkbox' | 'dropdown' | 'text' | 'textarea' | 'scale';
+
+interface ScaleConfig {
+  min: number;
+  max: number;
+  minLabel?: string;
+  maxLabel?: string;
+}
+
 interface FixedQuestionInput {
   statement: string;
   detail: string;
   options: string[];
+  question_type?: QuestionType;
+  scale_config?: ScaleConfig | null;
 }
 
 const EMPTY_FIXED_QUESTION: FixedQuestionInput = {
   statement: "",
   detail: "",
   options: ["", ""],
+  question_type: "radio",
 };
 
 export function PresetCreator() {
@@ -180,6 +192,39 @@ export function PresetCreator() {
     });
   };
 
+  const updateFixedQuestionType = (qIndex: number, type: QuestionType) => {
+    setFixedQuestions((prev) => {
+      const updated = [...prev];
+      const q = { ...updated[qIndex], question_type: type };
+      if (type === 'text' || type === 'textarea') {
+        q.options = [];
+        q.scale_config = null;
+      } else if (type === 'scale') {
+        q.options = [];
+        q.scale_config = q.scale_config || { min: 1, max: 5 };
+      } else {
+        q.scale_config = null;
+        if (q.options.length < 2) q.options = ["", ""];
+      }
+      updated[qIndex] = q;
+      return updated;
+    });
+  };
+
+  const updateScaleConfig = (qIndex: number, field: keyof ScaleConfig, value: string | number) => {
+    setFixedQuestions((prev) => {
+      const updated = [...prev];
+      const config = { ...(updated[qIndex].scale_config || { min: 1, max: 5 }) };
+      if (field === 'min' || field === 'max') {
+        config[field] = Number(value) || 0;
+      } else {
+        (config as Record<string, unknown>)[field] = value;
+      }
+      updated[qIndex] = { ...updated[qIndex], scale_config: config };
+      return updated;
+    });
+  };
+
   const handlePdfExtract = (text: string) => {
     setBackgroundText((prev) => prev + "\n\n--- PDF Content ---\n" + text);
   };
@@ -194,10 +239,17 @@ export function PresetCreator() {
       const filteredFixedQuestions = fixedQuestions
         .filter((q) => q.statement.trim())
         .map((q) => ({
-          ...q,
+          statement: q.statement,
+          detail: q.detail,
           options: q.options.filter((o) => o.trim()),
+          question_type: q.question_type || 'radio',
+          ...(q.scale_config ? { scale_config: q.scale_config } : {}),
         }))
-        .filter((q) => q.options.length >= 2);
+        .filter((q) => {
+          if (q.question_type === 'text' || q.question_type === 'textarea') return true;
+          if (q.question_type === 'scale') return true;
+          return q.options.length >= 2;
+        });
 
       const response = await fetch("/api/presets", {
         method: "POST",
@@ -412,7 +464,10 @@ export function PresetCreator() {
           Formsのように、全回答者に同じ質問を出します。これに加えて、AIが各回答者に合わせた深掘り質問を自動追加します。
         </p>
 
-        {fixedQuestions.map((q, qIndex) => (
+        {fixedQuestions.map((q, qIndex) => {
+          const qType = q.question_type || 'radio';
+          const needsOptions = qType !== 'text' && qType !== 'textarea' && qType !== 'scale';
+          return (
           <div
             key={qIndex}
             className="bg-white rounded-lg border border-gray-200 p-4 space-y-3"
@@ -441,6 +496,18 @@ export function PresetCreator() {
                   className="w-full px-3 py-1.5 text-xs text-gray-500 border-b border-gray-100 focus:border-blue-300 focus:outline-none bg-transparent"
                 />
               </div>
+              <select
+                value={qType}
+                onChange={(e) => updateFixedQuestionType(qIndex, e.target.value as QuestionType)}
+                className="text-xs border border-gray-200 rounded px-2 py-1 bg-white shrink-0 mt-1"
+              >
+                <option value="radio">ラジオボタン</option>
+                <option value="checkbox">チェックボックス</option>
+                <option value="dropdown">プルダウン</option>
+                <option value="text">短文テキスト</option>
+                <option value="textarea">段落テキスト</option>
+                <option value="scale">均等目盛</option>
+              </select>
               <button
                 type="button"
                 onClick={() => removeFixedQuestion(qIndex)}
@@ -463,11 +530,67 @@ export function PresetCreator() {
               </button>
             </div>
 
-            {/* Options */}
+            {/* Scale config */}
+            {qType === 'scale' && (
+              <div className="pl-7 flex flex-wrap items-center gap-3 text-xs text-gray-600">
+                <label className="flex items-center gap-1">
+                  最小
+                  <input
+                    type="number"
+                    value={q.scale_config?.min ?? 1}
+                    onChange={(e) => updateScaleConfig(qIndex, 'min', e.target.value)}
+                    className="w-14 px-2 py-1 border border-gray-200 rounded text-center"
+                  />
+                </label>
+                <label className="flex items-center gap-1">
+                  最大
+                  <input
+                    type="number"
+                    value={q.scale_config?.max ?? 5}
+                    onChange={(e) => updateScaleConfig(qIndex, 'max', e.target.value)}
+                    className="w-14 px-2 py-1 border border-gray-200 rounded text-center"
+                  />
+                </label>
+                <label className="flex items-center gap-1">
+                  左ラベル
+                  <input
+                    type="text"
+                    value={q.scale_config?.minLabel ?? ''}
+                    onChange={(e) => updateScaleConfig(qIndex, 'minLabel', e.target.value)}
+                    placeholder="例: 全く思わない"
+                    className="w-28 px-2 py-1 border border-gray-200 rounded"
+                  />
+                </label>
+                <label className="flex items-center gap-1">
+                  右ラベル
+                  <input
+                    type="text"
+                    value={q.scale_config?.maxLabel ?? ''}
+                    onChange={(e) => updateScaleConfig(qIndex, 'maxLabel', e.target.value)}
+                    placeholder="例: 強く思う"
+                    className="w-28 px-2 py-1 border border-gray-200 rounded"
+                  />
+                </label>
+              </div>
+            )}
+
+            {/* Text/textarea preview */}
+            {(qType === 'text' || qType === 'textarea') && (
+              <div className="pl-7 text-xs text-gray-400 italic py-2">
+                {qType === 'text' ? '回答者が短文テキストを入力します' : '回答者が段落テキストを入力します'}
+              </div>
+            )}
+
+            {/* Options (radio/checkbox/dropdown only) */}
+            {needsOptions && (
             <div className="space-y-1.5 pl-7">
               {q.options.map((option, oIndex) => (
                 <div key={oIndex} className="flex items-center gap-2">
-                  <span className="w-4 h-4 rounded-full border-2 border-gray-300 shrink-0" />
+                  {qType === 'checkbox' ? (
+                    <span className="w-4 h-4 rounded border-2 border-gray-300 shrink-0" />
+                  ) : (
+                    <span className="w-4 h-4 rounded-full border-2 border-gray-300 shrink-0" />
+                  )}
                   <input
                     type="text"
                     value={option}
@@ -506,13 +629,15 @@ export function PresetCreator() {
                   onClick={() => addFixedQuestionOption(qIndex)}
                   className="flex items-center gap-2 text-xs text-gray-400 hover:text-gray-600 transition-colors py-1"
                 >
-                  <span className="w-4 h-4 rounded-full border-2 border-dashed border-gray-300 shrink-0" />
+                  <span className={`w-4 h-4 border-2 border-dashed border-gray-300 shrink-0 ${qType === 'checkbox' ? 'rounded' : 'rounded-full'}`} />
                   選択肢を追加
                 </button>
               )}
             </div>
+            )}
           </div>
-        ))}
+          );
+        })}
 
         <button
           type="button"

@@ -1,12 +1,13 @@
 "use client";
 
-import { Fragment, useEffect, useRef, useCallback, useState } from "react";
-import { useRouter } from "next/navigation";
+import React, { Fragment, useEffect, useRef, useCallback, useState } from "react";
+import ReactMarkdown from "react-markdown";
 import { QuestionCard } from "./question-card";
 import { QuestionSkeleton } from "./question-skeleton";
 import { AnalysisBlock } from "@/components/analysis/analysis-block";
 import { AnalysisSkeleton } from "@/components/analysis/analysis-skeleton";
 import { ReportPreview } from "@/components/report/report-preview";
+import { QuestionCitation } from "@/components/report/question-citation";
 import { Progress } from "@/components/ui/progress";
 import { useSession } from "@/hooks/use-session";
 import { DEFAULT_REPORT_TARGET } from "@/lib/utils/phase";
@@ -24,7 +25,6 @@ export function QuestionFlow({
   autoGenerate = true,
   warmupStatus = "idle",
 }: QuestionFlowProps) {
-  const router = useRouter();
   const {
     session,
     questions,
@@ -53,14 +53,79 @@ export function QuestionFlow({
   const [processingBatch, setProcessingBatch] = useState(false);
   const [isFinishing, setIsFinishing] = useState(false);
   const [isAtBottom, setIsAtBottom] = useState(false);
+  const [showReportModal, setShowReportModal] = useState(false);
+  const [reportUrlCopied, setReportUrlCopied] = useState(false);
   const prevAnalysisCount = useRef(0);
 
-  // Handle finish and generate report with auto-redirect
+  const reportUrl = typeof window !== "undefined"
+    ? `${window.location.origin}/report/${sessionId}`
+    : `/report/${sessionId}`;
+
+  // Handle finish and generate report — show modal instead of redirecting
   const handleFinish = useCallback(async () => {
     setIsFinishing(true);
     await generateReport();
-    router.push(`/report/${sessionId}`);
-  }, [generateReport, router, sessionId]);
+    setIsFinishing(false);
+    setShowReportModal(true);
+  }, [generateReport]);
+
+  const handleCopyReportUrl = useCallback(async () => {
+    await navigator.clipboard.writeText(reportUrl);
+    setReportUrlCopied(true);
+    setTimeout(() => setReportUrlCopied(false), 2000);
+  }, [reportUrl]);
+
+  const [mdCopied, setMdCopied] = useState(false);
+  const handleCopyMarkdown = useCallback(async () => {
+    if (!report) return;
+    await navigator.clipboard.writeText(report.report_text);
+    setMdCopied(true);
+    setTimeout(() => setMdCopied(false), 2000);
+  }, [report]);
+
+  // Citation rendering for modal report
+  const getAnswerLabel = useCallback((q: typeof questions[0]): string | null => {
+    if (q.selectedOption === null) return null;
+    if (q.selectedOption === 6) {
+      const trimmed = q.freeText?.trim();
+      return trimmed ? `その他: ${trimmed}` : "その他";
+    }
+    return (q.options as string[])[q.selectedOption] ?? null;
+  }, [questions]);
+
+  const renderTextWithCitations = useCallback((text: string): React.ReactNode => {
+    const citationSplitRegex = /((?:\[|［)(?:Q)?\d+(?:\]|］))/g;
+    const citationMatchRegex = /(?:\[|［)(?:Q)?(\d+)(?:\]|］)/;
+    if (!citationMatchRegex.test(text)) return text;
+
+    const parts = text.split(citationSplitRegex);
+    return parts.map((part, i) => {
+      const match = part.match(citationMatchRegex);
+      if (!match) return part;
+      const qNum = Number(match[1]);
+      const question = questions.find((q) => q.question_index === qNum);
+      if (!question) return part;
+      return (
+        <QuestionCitation
+          key={`citation-${qNum}-${i}`}
+          questionIndex={qNum}
+          statement={question.statement}
+          selectedAnswer={getAnswerLabel(question)}
+        />
+      );
+    });
+  }, [questions, getAnswerLabel]);
+
+  const renderWithCitations = useCallback((node: React.ReactNode): React.ReactNode => {
+    if (typeof node === "string") return renderTextWithCitations(node);
+    if (Array.isArray(node)) return node.map((child) => renderWithCitations(child));
+    if (React.isValidElement<{ children?: React.ReactNode }>(node)) {
+      if (node.type === "code" || node.type === "pre") return node;
+      if (!node.props?.children) return node;
+      return React.cloneElement(node, node.props, renderWithCitations(node.props.children));
+    }
+    return node;
+  }, [renderTextWithCitations]);
 
   // Calculate current progress — account for all question types
   const isAnswered = (q: typeof questions[0]) => {
@@ -354,8 +419,26 @@ export function QuestionFlow({
           if (block.type === "questions") {
             return (
               <div key={`questions-${blockIndex}`} className="space-y-4">
-                {block.items.map((question) => (
+                {block.items.map((question, qIdx) => (
                   <Fragment key={question.id}>
+                    {/* Section header: fixed questions */}
+                    {hasFixedQuestions && blockIndex === 0 && qIdx === 0 && question.source === "fixed" && (
+                      <div className="relative py-4">
+                        <div className="absolute inset-0 flex items-center" aria-hidden="true">
+                          <div className="w-full border-t-2 border-gray-200" />
+                        </div>
+                        <div className="relative flex justify-start">
+                          <div className="bg-gray-50 pr-4">
+                            <p className="text-sm font-semibold text-gray-600">
+                              共通質問
+                            </p>
+                            <p className="text-xs text-gray-400 mt-0.5">
+                              全員に同じ質問をしています
+                            </p>
+                          </div>
+                        </div>
+                      </div>
+                    )}
                     {/* Section divider: fixed → AI transition */}
                     {question.question_index === firstAiQuestionIndex && (
                       <div className="relative py-4">
@@ -510,6 +593,124 @@ export function QuestionFlow({
             </svg>
             未回答の質問へ（残り{unansweredQuestions.length}件）
           </button>
+        </div>
+      )}
+
+      {/* Report modal */}
+      {showReportModal && report && (
+        <div className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto">
+          <div
+            className="fixed inset-0 bg-black/50 backdrop-blur-sm"
+            onClick={() => setShowReportModal(false)}
+          />
+          <div className="relative w-full max-w-3xl mx-4 my-8 sm:my-12">
+            {/* Modal card */}
+            <div className="bg-white rounded-2xl border border-gray-200 shadow-xl overflow-hidden">
+              {/* Modal header */}
+              <div className="px-6 py-4 border-b border-gray-100">
+                <div className="flex items-center justify-between mb-2">
+                  <div>
+                    <h2 className="text-lg font-bold text-gray-900">診断レポート</h2>
+                    <p className="text-xs text-gray-500">バージョン {report.version}</p>
+                  </div>
+                  <button
+                    onClick={() => setShowReportModal(false)}
+                    className="w-8 h-8 flex items-center justify-center rounded-lg text-gray-400 hover:text-gray-600 hover:bg-gray-100 transition-colors"
+                  >
+                    <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                      <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
+                    </svg>
+                  </button>
+                </div>
+                {/* Session purpose */}
+                {session?.purpose && (
+                  <p className="text-sm text-gray-600 mb-3">
+                    {session.title ? `${session.title} — ` : ""}{session.purpose}
+                  </p>
+                )}
+                {/* Action buttons */}
+                <div className="flex items-center gap-2 flex-wrap">
+                  <a
+                    href={`/report/${sessionId}`}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="inline-flex items-center gap-1.5 px-3 py-1.5 border border-gray-200 rounded-lg text-xs text-gray-600 hover:bg-gray-50 transition-colors"
+                  >
+                    <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                      <path strokeLinecap="round" strokeLinejoin="round" d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" />
+                    </svg>
+                    全文を別タブで開く
+                  </a>
+                  <button
+                    onClick={handleCopyReportUrl}
+                    className="inline-flex items-center gap-1.5 px-3 py-1.5 border border-gray-200 rounded-lg text-xs text-gray-600 hover:bg-gray-50 transition-colors"
+                  >
+                    <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                      <path strokeLinecap="round" strokeLinejoin="round" d="M13.828 10.172a4 4 0 00-5.656 0l-4 4a4 4 0 105.656 5.656l1.102-1.101m-.758-4.899a4 4 0 005.656 0l4-4a4 4 0 00-5.656-5.656l-1.1 1.1" />
+                    </svg>
+                    {reportUrlCopied ? "コピー済み" : "リンクをコピー"}
+                  </button>
+                  <button
+                    onClick={handleCopyMarkdown}
+                    className="inline-flex items-center gap-1.5 px-3 py-1.5 border border-gray-200 rounded-lg text-xs text-gray-600 hover:bg-gray-50 transition-colors"
+                  >
+                    <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                      <path strokeLinecap="round" strokeLinejoin="round" d="M8 5H6a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2v-1M8 5a2 2 0 002 2h2a2 2 0 002-2M8 5a2 2 0 012-2h2a2 2 0 012 2m0 0h2a2 2 0 012 2v3m2 4H10m0 0l3-3m-3 3l3 3" />
+                    </svg>
+                    {mdCopied ? "コピー済み" : "MDをコピー"}
+                  </button>
+                </div>
+              </div>
+
+              {/* Report content */}
+              <div className="p-6 md:p-8">
+                <div className="flex items-center gap-3 mb-6 pb-4 border-b border-gray-200">
+                  <div className="flex items-center justify-center w-8 h-8 rounded-lg bg-blue-600 shadow-sm">
+                    <svg className="w-4 h-4 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9.663 17h4.673M12 3v1m6.364 1.636l-.707.707M21 12h-1M4 12H3m3.343-5.657l-.707-.707m2.828 9.9a5 5 0 117.072 0l-.548.547A3.374 3.374 0 0014 18.469V19a2 2 0 11-4 0v-.531c0-.895-.356-1.754-.988-2.386l-.548-.547z" />
+                    </svg>
+                  </div>
+                  <h3 className="text-base font-bold text-gray-900">AIレポート</h3>
+                </div>
+                <div className="prose prose-blue max-w-none prose-headings:text-gray-900 prose-p:text-gray-700 prose-li:text-gray-700">
+                  <ReactMarkdown
+                    components={{
+                      p: ({ node, children, ...props }) => (
+                        <p {...props}>{renderWithCitations(children)}</p>
+                      ),
+                      li: ({ node, children, ...props }) => (
+                        <li {...props}>{renderWithCitations(children)}</li>
+                      ),
+                      blockquote: ({ node, children, ...props }) => (
+                        <blockquote {...props}>{renderWithCitations(children)}</blockquote>
+                      ),
+                      h1: ({ node, children, ...props }) => (
+                        <h1 {...props}>{renderWithCitations(children)}</h1>
+                      ),
+                      h2: ({ node, children, ...props }) => (
+                        <h2 {...props}>{renderWithCitations(children)}</h2>
+                      ),
+                      h3: ({ node, children, ...props }) => (
+                        <h3 {...props}>{renderWithCitations(children)}</h3>
+                      ),
+                    }}
+                  >
+                    {report.report_text}
+                  </ReactMarkdown>
+                </div>
+              </div>
+
+              {/* Modal footer */}
+              <div className="px-6 py-4 border-t border-gray-100 bg-gray-50 flex justify-end">
+                <button
+                  onClick={() => setShowReportModal(false)}
+                  className="px-5 py-2.5 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors text-sm font-medium"
+                >
+                  閉じて回答を続ける
+                </button>
+              </div>
+            </div>
+          </div>
         </div>
       )}
     </div>

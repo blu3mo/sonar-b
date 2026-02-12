@@ -5,8 +5,35 @@ const OTHER_OPTION_INDEX = 6;
 function formatAnswerText(
   options: string[],
   selectedOption: number | null | undefined,
-  freeText?: string | null
+  freeText?: string | null,
+  questionType?: string,
+  selectedOptions?: number[] | null,
+  answerText?: string | null,
+  scaleConfig?: { min: number; max: number; minLabel?: string; maxLabel?: string } | null
 ): string {
+  const qt = questionType || 'radio';
+
+  // text/textarea: return the answer text
+  if (qt === 'text' || qt === 'textarea') {
+    return answerText?.trim() || "未回答";
+  }
+
+  // checkbox: join selected option labels
+  if (qt === 'checkbox') {
+    if (!selectedOptions || selectedOptions.length === 0) return "未回答";
+    return selectedOptions.map(i => options[i] ?? `選択肢${i}`).join(", ");
+  }
+
+  // scale: show numeric value with labels
+  if (qt === 'scale') {
+    if (selectedOption === null || selectedOption === undefined) return "未回答";
+    const label = scaleConfig
+      ? `${selectedOption}（${scaleConfig.minLabel || scaleConfig.min} 〜 ${scaleConfig.maxLabel || scaleConfig.max}）`
+      : String(selectedOption);
+    return label;
+  }
+
+  // radio/dropdown: existing logic
   if (selectedOption === null || selectedOption === undefined) {
     return "未回答";
   }
@@ -36,6 +63,10 @@ export interface QuestionGenerationContext {
     options: string[];
     selectedOption: number | null;
     freeText?: string | null;
+    questionType?: string;
+    selectedOptions?: number[] | null;
+    answerText?: string | null;
+    scaleConfig?: { min: number; max: number; minLabel?: string; maxLabel?: string } | null;
   }>;
   startIndex: number;
   endIndex: number;
@@ -48,11 +79,15 @@ export function buildQuestionGenerationPrompt(
   const qaHistory = ctx.previousQA
     .map((qa) => {
       const selectedText =
-        qa.selectedOption !== null
+        qa.selectedOption !== null || qa.selectedOptions || qa.answerText
           ? `回答: ${formatAnswerText(
             qa.options,
             qa.selectedOption,
-            qa.freeText
+            qa.freeText,
+            qa.questionType,
+            qa.selectedOptions,
+            qa.answerText,
+            qa.scaleConfig
           )}`
           : "未回答";
       return `Q${qa.index}: ${qa.statement}\n詳細: ${qa.detail}\n選択肢: ${qa.options.join(" / ")}\n${selectedText}`;
@@ -165,8 +200,12 @@ export interface AnalysisGenerationContext {
     statement: string;
     detail: string;
     options: string[];
-    selectedOption: number;
+    selectedOption: number | null;
     freeText?: string | null;
+    questionType?: string;
+    selectedOptions?: number[] | null;
+    answerText?: string | null;
+    scaleConfig?: { min: number; max: number; minLabel?: string; maxLabel?: string } | null;
   }>;
   startIndex: number;
   endIndex: number;
@@ -179,7 +218,7 @@ export function buildAnalysisPrompt(ctx: AnalysisGenerationContext): string {
       return `Q${qa.index}: ${qa.statement}
 詳細: ${qa.detail}
 選択肢: ${qa.options.join(" / ")}
-回答: ${formatAnswerText(qa.options, qa.selectedOption, qa.freeText)}`;
+回答: ${formatAnswerText(qa.options, qa.selectedOption, qa.freeText, qa.questionType, qa.selectedOptions, qa.answerText, qa.scaleConfig)}`;
     })
     .join("\n\n");
 
@@ -224,9 +263,13 @@ export interface ReportGenerationContext {
     statement: string;
     detail: string;
     options: string[];
-    selectedOption: number;
+    selectedOption: number | null;
     freeText?: string | null;
     source?: "ai" | "fixed";
+    questionType?: string;
+    selectedOptions?: number[] | null;
+    answerText?: string | null;
+    scaleConfig?: { min: number; max: number; minLabel?: string; maxLabel?: string } | null;
   }>;
   allAnalyses: string[];
   version: number;
@@ -237,7 +280,7 @@ export function buildReportPrompt(ctx: ReportGenerationContext): string {
     .map((qa) => {
       return `[Q${qa.index}] ${qa.statement}
 詳細: ${qa.detail}
-選択: ${formatAnswerText(qa.options, qa.selectedOption, qa.freeText)}`;
+選択: ${formatAnswerText(qa.options, qa.selectedOption, qa.freeText, qa.questionType, qa.selectedOptions, qa.answerText, qa.scaleConfig)}`;
     })
     .join("\n\n");
 
@@ -359,8 +402,12 @@ export interface SurveyReportParticipant {
     statement: string;
     detail: string;
     options: string[];
-    selectedOption: number;
+    selectedOption: number | null;
     freeText?: string | null;
+    questionType?: string;
+    selectedOptions?: number[] | null;
+    answerText?: string | null;
+    scaleConfig?: { min: number; max: number; minLabel?: string; maxLabel?: string } | null;
   }>;
   personalReport: string | null; // latest report_text, or null
 }
@@ -385,12 +432,16 @@ export function buildSurveyReportPrompt(
     .map((p) => {
       const qaBlock = p.qa
         .map((qa) => {
-          const answerText = formatAnswerText(
+          const ansText = formatAnswerText(
             qa.options,
             qa.selectedOption,
-            qa.freeText
+            qa.freeText,
+            qa.questionType,
+            qa.selectedOptions,
+            qa.answerText,
+            qa.scaleConfig
           );
-          return `[U${p.userNumber}-Q${qa.index}] ${qa.statement}\n詳細: ${qa.detail}\n選択: ${answerText}`;
+          return `[U${p.userNumber}-Q${qa.index}] ${qa.statement}\n詳細: ${qa.detail}\n選択: ${ansText}`;
         })
         .join("\n\n");
 

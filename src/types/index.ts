@@ -1,7 +1,18 @@
+export type QuestionType = 'radio' | 'checkbox' | 'dropdown' | 'text' | 'textarea' | 'scale';
+
+export interface ScaleConfig {
+  min: number;
+  max: number;
+  minLabel?: string;
+  maxLabel?: string;
+}
+
 export interface FixedQuestion {
   statement: string;
   detail: string;
   options: string[];
+  question_type?: QuestionType;
+  scale_config?: ScaleConfig;
 }
 
 export interface Preset {
@@ -54,17 +65,23 @@ export interface Question {
   options: string[];
   phase: "exploration" | "deep-dive";
   source?: "ai" | "fixed";
+  question_type?: QuestionType;
+  scale_config?: ScaleConfig | null;
   created_at: string;
   selectedOption?: number | null;
   freeText?: string | null;
+  selectedOptions?: number[] | null;
+  answerText?: string | null;
 }
 
 export interface Answer {
   id: string;
   question_id: string;
   session_id: string;
-  selected_option: number;
+  selected_option: number | null;
   free_text: string | null;
+  selected_options: number[] | null;
+  answer_text: string | null;
   created_at: string;
   updated_at: string;
 }
@@ -113,8 +130,11 @@ export interface GenerateQuestionsResponse {
 export interface SaveAnswerRequest {
   sessionId: string;
   questionId: string;
-  selectedOption: number;
+  questionType?: QuestionType;
+  selectedOption?: number | null;
   freeText?: string | null;
+  selectedOptions?: number[] | null;
+  answerText?: string | null;
 }
 
 export interface SaveAnswerResponse {

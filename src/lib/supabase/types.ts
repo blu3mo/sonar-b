@@ -63,6 +63,8 @@ export interface Database {
           options: Json;
           phase: "exploration" | "deep-dive";
           source: string | null;
+          question_type: string;
+          scale_config: Json | null;
           created_at: string;
         };
         Insert: {
@@ -74,6 +76,8 @@ export interface Database {
           options: Json;
           phase: "exploration" | "deep-dive";
           source?: string | null;
+          question_type?: string;
+          scale_config?: Json | null;
           created_at?: string;
         };
         Update: {
@@ -85,6 +89,8 @@ export interface Database {
           options?: Json;
           phase?: "exploration" | "deep-dive";
           source?: string | null;
+          question_type?: string;
+          scale_config?: Json | null;
           created_at?: string;
         };
       };
@@ -93,8 +99,10 @@ export interface Database {
           id: string;
           question_id: string;
           session_id: string;
-          selected_option: number;
+          selected_option: number | null;
           free_text: string | null;
+          selected_options: Json | null;
+          answer_text: string | null;
           created_at: string;
           updated_at: string;
         };
@@ -102,8 +110,10 @@ export interface Database {
           id?: string;
           question_id: string;
           session_id: string;
-          selected_option: number;
+          selected_option?: number | null;
           free_text?: string | null;
+          selected_options?: Json | null;
+          answer_text?: string | null;
           created_at?: string;
           updated_at?: string;
         };
@@ -111,8 +121,10 @@ export interface Database {
           id?: string;
           question_id?: string;
           session_id?: string;
-          selected_option?: number;
+          selected_option?: number | null;
           free_text?: string | null;
+          selected_options?: Json | null;
+          answer_text?: string | null;
           created_at?: string;
           updated_at?: string;
         };

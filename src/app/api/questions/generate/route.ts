@@ -23,6 +23,8 @@ interface FixedQuestionDef {
   statement: string;
   detail: string;
   options: string[];
+  question_type?: string;
+  scale_config?: { min: number; max: number; minLabel?: string; maxLabel?: string } | null;
 }
 
 interface SessionData {
@@ -138,6 +140,8 @@ export async function POST(request: NextRequest) {
         options: f.def.options,
         phase,
         source: "fixed" as const,
+        question_type: f.def.question_type || "radio",
+        scale_config: f.def.scale_config || null,
       }));
 
     let insertedQuestions: QuestionWithAnswer[] = [];

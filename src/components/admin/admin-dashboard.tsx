@@ -27,9 +27,14 @@ interface ResponseInfo {
   session_id: string;
   question_index: number;
   statement: string;
-  selected_option: number;
+  selected_option: number | null;
   options: string[];
   free_text: string | null;
+  source?: string;
+  question_type?: string;
+  scale_config?: { min: number; max: number; minLabel?: string; maxLabel?: string } | null;
+  selected_options?: number[] | null;
+  answer_text?: string | null;
 }
 
 interface ReportInfo {
@@ -288,11 +293,11 @@ export function AdminDashboard({ token }: { token: string }) {
                                   Q{r.question_index}. {r.statement}
                                 </p>
                                 <p className="text-gray-900">
-                                  {r.selected_option >= r.options.length &&
+                                  {r.selected_option !== null && r.selected_option >= r.options.length &&
                                   r.free_text
                                     ? r.free_text
-                                    : r.options[r.selected_option] ??
-                                      `選択肢 ${r.selected_option}`}
+                                    : r.answer_text || (r.selected_option !== null ? (r.options[r.selected_option] ??
+                                      `選択肢 ${r.selected_option}`) : "(未回答)")}
                                 </p>
                               </div>
                             ))}

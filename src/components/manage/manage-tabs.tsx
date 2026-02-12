@@ -33,9 +33,14 @@ interface ResponseInfo {
   session_id: string;
   question_index: number;
   statement: string;
-  selected_option: number;
+  selected_option: number | null;
   options: string[];
   free_text: string | null;
+  source: string;
+  question_type: string;
+  scale_config: { min: number; max: number; minLabel?: string; maxLabel?: string } | null;
+  selected_options: number[] | null;
+  answer_text: string | null;
 }
 
 interface ReportInfo {
@@ -67,10 +72,21 @@ interface AdminData {
   surveyReports: SurveyReportInfo[];
 }
 
+type QuestionType = 'radio' | 'checkbox' | 'dropdown' | 'text' | 'textarea' | 'scale';
+
+interface ScaleConfig {
+  min: number;
+  max: number;
+  minLabel?: string;
+  maxLabel?: string;
+}
+
 interface FixedQuestionInput {
   statement: string;
   detail: string;
   options: string[];
+  question_type?: QuestionType;
+  scale_config?: ScaleConfig;
 }
 
 export interface ManageTabsProps {
@@ -142,8 +158,17 @@ export function ManageTabs({ token, userEmail, preset }: ManageTabsProps) {
     exploration_themes: keyQuestions.filter((q) => q.trim()),
     fixed_questions: fixedQuestions
       .filter((q) => q.statement.trim())
-      .map((q) => ({ ...q, options: q.options.filter((o) => o.trim()) }))
-      .filter((q) => q.options.length >= 2),
+      .map((q) => ({
+        ...q,
+        options: q.options.filter((o) => o.trim()),
+        question_type: q.question_type || "radio",
+        scale_config: q.question_type === "scale" ? q.scale_config : undefined,
+      }))
+      .filter((q) => {
+        const qt = q.question_type || "radio";
+        if (qt === "text" || qt === "textarea") return true; // no options needed
+        return q.options.length >= 2;
+      }),
     report_target: reportTarget,
   };
 
@@ -368,6 +393,7 @@ export function ManageTabs({ token, userEmail, preset }: ManageTabsProps) {
           surveyReports={surveyReports}
           completedCount={completedSessions.length}
           onReportGenerated={handleSurveyReportGenerated}
+          fixedQuestions={fixedQuestions}
         />
       )}
 
@@ -511,10 +537,28 @@ function QuestionsEditTab({
     setKeyQuestions((prev) => { const u = [...prev]; const [m] = u.splice(from, 1); u.splice(to, 0, m); return u; });
   };
 
-  const addFixedQuestion = () => setFixedQuestions((prev) => [...prev, { statement: "", detail: "", options: ["", ""] }]);
+  const addFixedQuestion = () => setFixedQuestions((prev) => [...prev, { statement: "", detail: "", options: ["", ""], question_type: "radio" as QuestionType }]);
   const removeFixedQuestion = (index: number) => setFixedQuestions((prev) => prev.filter((_, i) => i !== index));
   const updateFixedQuestion = (index: number, field: keyof FixedQuestionInput, value: string) => {
     setFixedQuestions((prev) => { const u = [...prev]; u[index] = { ...u[index], [field]: value }; return u; });
+  };
+  const updateFixedQuestionType = (index: number, qt: QuestionType) => {
+    setFixedQuestions((prev) => {
+      const u = [...prev];
+      u[index] = { ...u[index], question_type: qt };
+      if (qt === "scale" && !u[index].scale_config) {
+        u[index] = { ...u[index], scale_config: { min: 1, max: 5 } };
+      }
+      return u;
+    });
+  };
+  const updateScaleConfig = (index: number, field: keyof ScaleConfig, value: string | number) => {
+    setFixedQuestions((prev) => {
+      const u = [...prev];
+      const sc = u[index].scale_config || { min: 1, max: 5 };
+      u[index] = { ...u[index], scale_config: { ...sc, [field]: value } };
+      return u;
+    });
   };
   const updateFixedQuestionOption = (qIndex: number, oIndex: number, value: string) => {
     setFixedQuestions((prev) => { const u = [...prev]; const o = [...u[qIndex].options]; o[oIndex] = value; u[qIndex] = { ...u[qIndex], options: o }; return u; });
@@ -577,7 +621,10 @@ function QuestionsEditTab({
           全回答者に同じ質問を出します。これに加えて、AIが各回答者に合わせた深掘り質問を自動追加します。
         </p>
 
-        {fixedQuestions.map((q, qIndex) => (
+        {fixedQuestions.map((q, qIndex) => {
+          const qt = q.question_type || "radio";
+          const needsOptions = qt !== "text" && qt !== "textarea";
+          return (
           <div key={qIndex} className="bg-white rounded-lg border border-gray-200 p-4 space-y-3">
             <div className="flex items-start justify-between gap-2">
               <span className="text-xs text-gray-400 mt-2 shrink-0">Q{qIndex + 1}</span>
@@ -593,10 +640,33 @@ function QuestionsEditTab({
                 </svg>
               </button>
             </div>
+            {/* Question type selector */}
+            <div className="pl-7">
+              <select value={qt} onChange={(e) => updateFixedQuestionType(qIndex, e.target.value as QuestionType)} onBlur={onBlur}
+                className="px-2 py-1 text-xs border border-gray-200 rounded-md bg-gray-50 text-gray-600 focus:ring-1 focus:ring-blue-400 focus:outline-none">
+                <option value="radio">ラジオボタン</option>
+                <option value="checkbox">チェックボックス</option>
+                <option value="dropdown">プルダウン</option>
+                <option value="text">短文テキスト</option>
+                <option value="textarea">段落テキスト</option>
+                <option value="scale">均等目盛</option>
+              </select>
+            </div>
+            {/* Scale config */}
+            {qt === "scale" && (
+              <div className="pl-7 flex flex-wrap items-center gap-3 text-xs text-gray-600">
+                <label className="flex items-center gap-1">最小 <input type="number" value={q.scale_config?.min ?? 1} onChange={(e) => updateScaleConfig(qIndex, "min", Number(e.target.value))} onBlur={onBlur} className="w-14 px-1.5 py-1 border border-gray-200 rounded text-xs" /></label>
+                <label className="flex items-center gap-1">最大 <input type="number" value={q.scale_config?.max ?? 5} onChange={(e) => updateScaleConfig(qIndex, "max", Number(e.target.value))} onBlur={onBlur} className="w-14 px-1.5 py-1 border border-gray-200 rounded text-xs" /></label>
+                <label className="flex items-center gap-1">左ラベル <input type="text" value={q.scale_config?.minLabel ?? ""} onChange={(e) => updateScaleConfig(qIndex, "minLabel", e.target.value)} onBlur={onBlur} placeholder="例: 低い" className="w-20 px-1.5 py-1 border border-gray-200 rounded text-xs" /></label>
+                <label className="flex items-center gap-1">右ラベル <input type="text" value={q.scale_config?.maxLabel ?? ""} onChange={(e) => updateScaleConfig(qIndex, "maxLabel", e.target.value)} onBlur={onBlur} placeholder="例: 高い" className="w-20 px-1.5 py-1 border border-gray-200 rounded text-xs" /></label>
+              </div>
+            )}
+            {/* Options (hidden for text/textarea) */}
+            {needsOptions && (
             <div className="space-y-1.5 pl-7">
               {q.options.map((option, oIndex) => (
                 <div key={oIndex} className="flex items-center gap-2">
-                  <span className="w-4 h-4 rounded-full border-2 border-gray-300 shrink-0" />
+                  <span className={`w-4 h-4 shrink-0 border-2 border-gray-300 ${qt === "checkbox" ? "rounded" : "rounded-full"}`} />
                   <input type="text" value={option} onChange={(e) => updateFixedQuestionOption(qIndex, oIndex, e.target.value)} onBlur={onBlur}
                     placeholder={`選択肢 ${oIndex + 1}`} className="flex-1 px-2 py-1.5 text-sm border-b border-gray-100 focus:border-blue-400 focus:outline-none bg-transparent" />
                   {q.options.length > 2 && (
@@ -610,13 +680,15 @@ function QuestionsEditTab({
               ))}
               {q.options.length < 10 && (
                 <button type="button" onClick={() => addFixedQuestionOption(qIndex)} className="flex items-center gap-2 text-xs text-gray-400 hover:text-gray-600 transition-colors py-1">
-                  <span className="w-4 h-4 rounded-full border-2 border-dashed border-gray-300 shrink-0" />
+                  <span className={`w-4 h-4 border-2 border-dashed border-gray-300 shrink-0 ${qt === "checkbox" ? "rounded" : "rounded-full"}`} />
                   選択肢を追加
                 </button>
               )}
             </div>
+            )}
           </div>
-        ))}
+          );
+        })}
 
         <button type="button" onClick={addFixedQuestion}
           className="w-full py-3 border-2 border-dashed border-blue-200 rounded-lg text-sm text-blue-600 hover:bg-blue-50 hover:border-blue-300 transition-colors">
@@ -697,14 +769,75 @@ function QuestionsEditTab({
 
 // --- 回答タブ ---
 
-function ResponsesTab({ token, sessions, responses, reports, surveyReports, completedCount, onReportGenerated }: {
+type ResponseSubTab = "summary" | "questions" | "individual";
+
+function ResponsesTab({ token, sessions, responses, reports, surveyReports, completedCount, onReportGenerated, fixedQuestions }: {
   token: string; sessions: SessionInfo[]; responses: ResponseInfo[]; reports: ReportInfo[];
   surveyReports: SurveyReportInfo[]; completedCount: number; onReportGenerated: (report: SurveyReportInfo) => void;
+  fixedQuestions: FixedQuestionInput[];
 }) {
-  const [expandedSession, setExpandedSession] = useState<string | null>(null);
+  const [subTab, setSubTab] = useState<ResponseSubTab>("summary");
+
+  const SUB_TABS: { id: ResponseSubTab; label: string }[] = [
+    { id: "summary", label: "要約" },
+    { id: "questions", label: "質問" },
+    { id: "individual", label: "個別" },
+  ];
 
   return (
     <div className="space-y-6">
+      {/* Sub-tab bar */}
+      <div className="flex gap-1 bg-gray-100 rounded-lg p-1">
+        {SUB_TABS.map((tab) => (
+          <button key={tab.id} onClick={() => setSubTab(tab.id)}
+            className={`flex-1 py-2 text-sm font-medium rounded-md transition-colors ${subTab === tab.id ? "bg-white text-gray-900 shadow-sm" : "text-gray-500 hover:text-gray-700"}`}>
+            {tab.label}
+          </button>
+        ))}
+      </div>
+
+      {subTab === "summary" && (
+        <SummarySubTab
+          token={token}
+          completedCount={completedCount}
+          responses={responses}
+          sessions={sessions}
+          surveyReports={surveyReports}
+          onReportGenerated={onReportGenerated}
+          fixedQuestions={fixedQuestions}
+        />
+      )}
+
+      {subTab === "questions" && (
+        <QuestionsSubTab responses={responses} />
+      )}
+
+      {subTab === "individual" && (
+        <IndividualSubTab sessions={sessions} responses={responses} reports={reports} />
+      )}
+    </div>
+  );
+}
+
+// --- Summary Sub-tab ---
+
+function SummarySubTab({ token, completedCount, responses, sessions, surveyReports, onReportGenerated, fixedQuestions }: {
+  token: string; completedCount: number; responses: ResponseInfo[]; sessions: SessionInfo[];
+  surveyReports: SurveyReportInfo[]; onReportGenerated: (report: SurveyReportInfo) => void;
+  fixedQuestions: FixedQuestionInput[];
+}) {
+  // Group fixed-question responses by statement
+  const fixedResponses = responses.filter((r) => r.source === "fixed");
+  const questionGroups = new Map<string, ResponseInfo[]>();
+  for (const r of fixedResponses) {
+    const key = r.statement;
+    if (!questionGroups.has(key)) questionGroups.set(key, []);
+    questionGroups.get(key)!.push(r);
+  }
+
+  return (
+    <div className="space-y-6">
+      {/* Total count */}
       <div className="bg-white rounded-xl border border-gray-200 p-4">
         <div className="text-center">
           <p className="text-3xl font-bold text-gray-900">{completedCount}</p>
@@ -712,62 +845,391 @@ function ResponsesTab({ token, sessions, responses, reports, surveyReports, comp
         </div>
       </div>
 
-      <SurveyReportSection token={token} surveyReports={surveyReports} sessions={sessions} responses={responses} onReportGenerated={onReportGenerated} />
+      {/* Fixed question aggregations */}
+      {fixedQuestions.length > 0 && questionGroups.size > 0 && (
+        <div className="space-y-4">
+          <h3 className="text-sm font-medium text-gray-700">固定質問の集計</h3>
+          {fixedQuestions.map((fq, idx) => {
+            const group = questionGroups.get(fq.statement);
+            if (!group || group.length === 0) return null;
+            const qt = fq.question_type || "radio";
+            return (
+              <div key={idx} className="bg-white rounded-xl border border-gray-200 p-4 space-y-3">
+                <p className="text-sm font-medium text-gray-900">{fq.statement}</p>
+                <p className="text-xs text-gray-500">{group.length}件の回答</p>
+                {(qt === "radio" || qt === "dropdown") && (
+                  <BarChartAggregation responses={group} options={fq.options} />
+                )}
+                {qt === "checkbox" && (
+                  <CheckboxAggregation responses={group} options={fq.options} />
+                )}
+                {qt === "scale" && (
+                  <ScaleAggregation responses={group} scaleConfig={fq.scale_config} />
+                )}
+                {(qt === "text" || qt === "textarea") && (
+                  <TextAnswersList responses={group} />
+                )}
+              </div>
+            );
+          })}
+        </div>
+      )}
 
-      <div>
-        <h2 className="text-sm font-medium text-gray-700 mb-3">回答一覧（{sessions.length}件）</h2>
-        {sessions.length === 0 ? (
-          <div className="bg-white rounded-xl border border-gray-200 p-8 text-center">
-            <p className="text-sm text-gray-500">URLを共有して回答を集めましょう。</p>
+      {/* AI insight reports */}
+      <SurveyReportSection token={token} surveyReports={surveyReports} sessions={sessions} responses={responses} onReportGenerated={onReportGenerated} />
+    </div>
+  );
+}
+
+// --- Bar chart for radio/dropdown ---
+function BarChartAggregation({ responses, options }: { responses: ResponseInfo[]; options: string[] }) {
+  const total = responses.length;
+  const counts = new Map<number, number>();
+  let freeTextCount = 0;
+  for (const r of responses) {
+    if (r.selected_option !== null) {
+      if (r.selected_option >= options.length) {
+        freeTextCount++;
+      } else {
+        counts.set(r.selected_option, (counts.get(r.selected_option) || 0) + 1);
+      }
+    }
+  }
+
+  return (
+    <div className="space-y-2">
+      {options.map((opt, i) => {
+        if (!opt.trim()) return null;
+        const count = counts.get(i) || 0;
+        const pct = total > 0 ? Math.round((count / total) * 100) : 0;
+        return (
+          <div key={i} className="flex items-center gap-3 text-sm">
+            <span className="w-32 text-gray-700 truncate shrink-0" title={opt}>{opt}</span>
+            <div className="flex-1 bg-gray-100 rounded-full h-5 overflow-hidden">
+              <div className="bg-blue-500 h-full rounded-full transition-all" style={{ width: `${pct}%` }} />
+            </div>
+            <span className="text-xs text-gray-500 w-16 text-right shrink-0">{count}件 ({pct}%)</span>
           </div>
-        ) : (
-          <div className="space-y-2">
-            {sessions.map((session, idx) => {
-              const sr = responses.filter((r) => r.session_id === session.id);
-              const rpt = reports.find((r) => r.session_id === session.id);
-              const open = expandedSession === session.id;
-              return (
-                <div key={session.id} className="bg-white rounded-lg border border-gray-200 overflow-hidden">
-                  <button onClick={() => setExpandedSession(open ? null : session.id)}
-                    className="w-full px-4 py-3 flex items-center justify-between text-left hover:bg-gray-50 transition-colors">
-                    <div className="min-w-0">
-                      <p className="text-sm font-medium text-gray-900 truncate">回答 #{idx + 1}</p>
-                      <p className="text-xs text-gray-500">{new Date(session.created_at).toLocaleString("ja-JP")} / {session.current_question_index}問回答</p>
-                    </div>
-                    <svg className={`w-4 h-4 text-gray-400 transition-transform ${open ? "rotate-180" : ""}`} fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
-                    </svg>
-                  </button>
-                  {open && (
-                    <div className="border-t border-gray-100 px-4 py-4 space-y-4">
-                      {sr.length > 0 ? (
-                        <div className="space-y-2">
-                          {sr.sort((a, b) => a.question_index - b.question_index).map((r, i) => (
-                            <div key={i} className="text-sm border border-gray-100 rounded-lg p-3">
-                              <p className="text-gray-500 text-xs mb-1">Q{r.question_index}. {r.statement}</p>
-                              <p className="text-gray-900">{r.selected_option >= r.options.length && r.free_text ? r.free_text : r.options[r.selected_option] ?? `選択肢 ${r.selected_option}`}</p>
-                            </div>
-                          ))}
-                        </div>
-                      ) : <p className="text-sm text-gray-500">回答データがありません</p>}
-                      {rpt && (
-                        <Link href={`/report/${session.id}`} className="inline-flex items-center gap-1 text-sm text-blue-600 hover:text-blue-800" target="_blank">
-                          レポートを表示
-                          <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13.5 6H5.25A2.25 2.25 0 0 0 3 8.25v10.5A2.25 2.25 0 0 0 5.25 21h10.5A2.25 2.25 0 0 0 18 18.75V10.5m-10.5 6L21 3m0 0h-5.25M21 3v5.25" />
-                          </svg>
-                        </Link>
-                      )}
-                    </div>
+        );
+      })}
+      {freeTextCount > 0 && (
+        <div className="flex items-center gap-3 text-sm">
+          <span className="w-32 text-gray-500 truncate shrink-0">その他</span>
+          <div className="flex-1 bg-gray-100 rounded-full h-5 overflow-hidden">
+            <div className="bg-gray-400 h-full rounded-full transition-all" style={{ width: `${total > 0 ? Math.round((freeTextCount / total) * 100) : 0}%` }} />
+          </div>
+          <span className="text-xs text-gray-500 w-16 text-right shrink-0">{freeTextCount}件</span>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// --- Checkbox aggregation ---
+function CheckboxAggregation({ responses, options }: { responses: ResponseInfo[]; options: string[] }) {
+  const total = responses.length;
+  const counts = new Map<number, number>();
+  for (const r of responses) {
+    const selections = r.selected_options || (r.selected_option !== null ? [r.selected_option] : []);
+    for (const idx of selections) {
+      counts.set(idx, (counts.get(idx) || 0) + 1);
+    }
+  }
+
+  return (
+    <div className="space-y-2">
+      {options.map((opt, i) => {
+        if (!opt.trim()) return null;
+        const count = counts.get(i) || 0;
+        const pct = total > 0 ? Math.round((count / total) * 100) : 0;
+        return (
+          <div key={i} className="flex items-center gap-3 text-sm">
+            <span className="w-32 text-gray-700 truncate shrink-0" title={opt}>{opt}</span>
+            <div className="flex-1 bg-gray-100 rounded-full h-5 overflow-hidden">
+              <div className="bg-green-500 h-full rounded-full transition-all" style={{ width: `${pct}%` }} />
+            </div>
+            <span className="text-xs text-gray-500 w-16 text-right shrink-0">{count}件 ({pct}%)</span>
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
+// --- Scale aggregation ---
+function ScaleAggregation({ responses, scaleConfig }: { responses: ResponseInfo[]; scaleConfig?: ScaleConfig | null }) {
+  const config = scaleConfig || { min: 1, max: 5 };
+  const values = responses.map((r) => r.selected_option).filter((v): v is number => v !== null);
+  const avg = values.length > 0 ? values.reduce((a, b) => a + b, 0) / values.length : 0;
+  const total = values.length;
+
+  // Distribution
+  const dist = new Map<number, number>();
+  for (const v of values) dist.set(v, (dist.get(v) || 0) + 1);
+
+  const scaleRange: number[] = [];
+  for (let i = config.min; i <= config.max; i++) scaleRange.push(i);
+
+  return (
+    <div className="space-y-3">
+      <div className="flex items-baseline gap-2">
+        <span className="text-2xl font-bold text-gray-900">{avg.toFixed(1)}</span>
+        <span className="text-sm text-gray-500">/ {config.max} 平均</span>
+      </div>
+      {config.minLabel && config.maxLabel && (
+        <div className="flex justify-between text-xs text-gray-400">
+          <span>{config.minLabel}</span>
+          <span>{config.maxLabel}</span>
+        </div>
+      )}
+      <div className="flex gap-1">
+        {scaleRange.map((n) => {
+          const count = dist.get(n) || 0;
+          const pct = total > 0 ? Math.round((count / total) * 100) : 0;
+          return (
+            <div key={n} className="flex-1 text-center">
+              <div className="bg-gray-100 rounded-t relative" style={{ height: "60px" }}>
+                <div className="absolute bottom-0 left-0 right-0 bg-purple-500 rounded-t transition-all" style={{ height: `${pct}%` }} />
+              </div>
+              <p className="text-xs text-gray-600 mt-1">{n}</p>
+              <p className="text-[10px] text-gray-400">{count}</p>
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
+// --- Text answers list ---
+function TextAnswersList({ responses }: { responses: ResponseInfo[] }) {
+  const texts = responses
+    .map((r) => r.answer_text || r.free_text)
+    .filter((t): t is string => !!t && t.trim().length > 0);
+
+  if (texts.length === 0) return <p className="text-xs text-gray-400">テキスト回答なし</p>;
+
+  return (
+    <div className="max-h-48 overflow-y-auto space-y-1.5">
+      {texts.map((t, i) => (
+        <div key={i} className="text-sm text-gray-700 bg-gray-50 rounded-lg px-3 py-2">{t}</div>
+      ))}
+    </div>
+  );
+}
+
+// --- Questions Sub-tab ---
+
+function QuestionsSubTab({ responses }: { responses: ResponseInfo[] }) {
+  // Build unique questions list, grouped by source
+  const questionMap = new Map<string, { statement: string; source: string; questionType: string; options: string[]; scaleConfig: ResponseInfo["scale_config"]; responses: ResponseInfo[] }>();
+  for (const r of responses) {
+    const key = `${r.source}::${r.statement}`;
+    if (!questionMap.has(key)) {
+      questionMap.set(key, {
+        statement: r.statement,
+        source: r.source || "ai",
+        questionType: r.question_type || "radio",
+        options: r.options,
+        scaleConfig: r.scale_config,
+        responses: [],
+      });
+    }
+    questionMap.get(key)!.responses.push(r);
+  }
+  const allQuestions = Array.from(questionMap.values());
+  const fixedQs = allQuestions.filter((q) => q.source === "fixed");
+  const aiQs = allQuestions.filter((q) => q.source !== "fixed");
+
+  const [selectedKey, setSelectedKey] = useState<string>(allQuestions.length > 0 ? `${allQuestions[0].source}::${allQuestions[0].statement}` : "");
+  const selected = questionMap.get(selectedKey);
+
+  return (
+    <div className="space-y-4">
+      <select value={selectedKey} onChange={(e) => setSelectedKey(e.target.value)}
+        className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm bg-white focus:ring-2 focus:ring-blue-500 focus:border-transparent">
+        {fixedQs.length > 0 && (
+          <optgroup label="固定質問">
+            {fixedQs.map((q) => (
+              <option key={`fixed::${q.statement}`} value={`fixed::${q.statement}`}>
+                {q.statement} ({q.responses.length}件)
+              </option>
+            ))}
+          </optgroup>
+        )}
+        {aiQs.length > 0 && (
+          <optgroup label="AI質問">
+            {aiQs.map((q) => (
+              <option key={`ai::${q.statement}`} value={`ai::${q.statement}`}>
+                {q.statement} ({q.responses.length}件)
+              </option>
+            ))}
+          </optgroup>
+        )}
+      </select>
+
+      {selected && (
+        <div className="bg-white rounded-xl border border-gray-200 p-4 space-y-4">
+          <div>
+            <p className="text-sm font-medium text-gray-900">{selected.statement}</p>
+            <p className="text-xs text-gray-500 mt-1">{selected.responses.length}件の回答 / {selected.source === "fixed" ? "固定質問" : "AI質問"} / {questionTypeLabel(selected.questionType)}</p>
+          </div>
+
+          {selected.source !== "fixed" && (
+            <p className="text-xs text-amber-600 bg-amber-50 rounded-lg px-3 py-2">
+              AI質問は回答者ごとに異なるため、集計結果は参考値です。
+            </p>
+          )}
+
+          {/* Aggregation */}
+          {(selected.questionType === "radio" || selected.questionType === "dropdown") && (
+            <BarChartAggregation responses={selected.responses} options={selected.options} />
+          )}
+          {selected.questionType === "checkbox" && (
+            <CheckboxAggregation responses={selected.responses} options={selected.options} />
+          )}
+          {selected.questionType === "scale" && (
+            <ScaleAggregation responses={selected.responses} scaleConfig={selected.scaleConfig} />
+          )}
+          {(selected.questionType === "text" || selected.questionType === "textarea") && (
+            <TextAnswersList responses={selected.responses} />
+          )}
+
+          {/* Individual answers list */}
+          <div>
+            <h4 className="text-xs font-medium text-gray-500 mb-2">個別回答</h4>
+            <div className="space-y-1.5 max-h-64 overflow-y-auto">
+              {selected.responses.map((r, i) => (
+                <div key={i} className="text-sm bg-gray-50 rounded-lg px-3 py-2">
+                  <span className="text-gray-900">{formatResponseText(r)}</span>
+                  {r.free_text && r.selected_option !== null && r.selected_option >= (r.options?.length || 0) && (
+                    <span className="text-gray-500 ml-1">({r.free_text})</span>
                   )}
                 </div>
-              );
-            })}
+              ))}
+            </div>
           </div>
+        </div>
+      )}
+
+      {!selected && responses.length === 0 && (
+        <div className="bg-white rounded-xl border border-gray-200 p-8 text-center">
+          <p className="text-sm text-gray-500">まだ回答がありません。</p>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// --- Individual Sub-tab ---
+
+function IndividualSubTab({ sessions, responses, reports }: { sessions: SessionInfo[]; responses: ResponseInfo[]; reports: ReportInfo[] }) {
+  const [selectedIdx, setSelectedIdx] = useState(0);
+
+  if (sessions.length === 0) {
+    return (
+      <div className="bg-white rounded-xl border border-gray-200 p-8 text-center">
+        <p className="text-sm text-gray-500">URLを共有して回答を集めましょう。</p>
+      </div>
+    );
+  }
+
+  const session = sessions[selectedIdx];
+  const sr = responses.filter((r) => r.session_id === session.id).sort((a, b) => a.question_index - b.question_index);
+  const rpt = reports.find((r) => r.session_id === session.id);
+
+  return (
+    <div className="space-y-4">
+      {/* Session selector */}
+      <div className="flex items-center gap-2">
+        <button type="button" disabled={selectedIdx <= 0} onClick={() => setSelectedIdx((p) => p - 1)}
+          className="p-2 rounded-lg border border-gray-200 hover:bg-gray-50 disabled:opacity-30 disabled:cursor-not-allowed transition-colors">
+          <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
+          </svg>
+        </button>
+        <select value={selectedIdx} onChange={(e) => setSelectedIdx(Number(e.target.value))}
+          className="flex-1 px-3 py-2 border border-gray-300 rounded-lg text-sm bg-white">
+          {sessions.map((s, i) => (
+            <option key={s.id} value={i}>回答 #{i + 1} — {new Date(s.created_at).toLocaleString("ja-JP")}</option>
+          ))}
+        </select>
+        <button type="button" disabled={selectedIdx >= sessions.length - 1} onClick={() => setSelectedIdx((p) => p + 1)}
+          className="p-2 rounded-lg border border-gray-200 hover:bg-gray-50 disabled:opacity-30 disabled:cursor-not-allowed transition-colors">
+          <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+          </svg>
+        </button>
+      </div>
+
+      {/* Q&A list */}
+      <div className="bg-white rounded-xl border border-gray-200 p-4 space-y-3">
+        <div className="flex items-center justify-between">
+          <p className="text-sm font-medium text-gray-900">回答 #{selectedIdx + 1}</p>
+          <p className="text-xs text-gray-500">{sr.length}問回答</p>
+        </div>
+        {sr.length > 0 ? (
+          <div className="space-y-2">
+            {sr.map((r, i) => (
+              <div key={i} className="text-sm border border-gray-100 rounded-lg p-3">
+                <div className="flex items-start gap-2">
+                  <span className="text-xs text-gray-400 shrink-0 mt-0.5">Q{r.question_index}</span>
+                  <div className="min-w-0">
+                    <p className="text-gray-600 text-xs mb-1">{r.statement}</p>
+                    <p className="text-gray-900">{formatResponseText(r)}</p>
+                  </div>
+                  <span className={`text-[10px] px-1.5 py-0.5 rounded shrink-0 ${r.source === "fixed" ? "bg-blue-50 text-blue-600" : "bg-purple-50 text-purple-600"}`}>
+                    {r.source === "fixed" ? "固定" : "AI"}
+                  </span>
+                </div>
+              </div>
+            ))}
+          </div>
+        ) : (
+          <p className="text-sm text-gray-500">回答データがありません</p>
+        )}
+        {rpt && (
+          <Link href={`/report/${session.id}`} className="inline-flex items-center gap-1 text-sm text-blue-600 hover:text-blue-800" target="_blank">
+            レポートを表示
+            <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13.5 6H5.25A2.25 2.25 0 0 0 3 8.25v10.5A2.25 2.25 0 0 0 5.25 21h10.5A2.25 2.25 0 0 0 18 18.75V10.5m-10.5 6L21 3m0 0h-5.25M21 3v5.25" />
+            </svg>
+          </Link>
         )}
       </div>
     </div>
   );
+}
+
+// --- Helpers ---
+
+function questionTypeLabel(qt: string): string {
+  const labels: Record<string, string> = {
+    radio: "ラジオボタン", checkbox: "チェックボックス", dropdown: "プルダウン",
+    text: "短文テキスト", textarea: "段落テキスト", scale: "均等目盛",
+  };
+  return labels[qt] || qt;
+}
+
+function formatResponseText(r: ResponseInfo): string {
+  const qt = r.question_type || "radio";
+  if (qt === "text" || qt === "textarea") return r.answer_text || r.free_text || "(未回答)";
+  if (qt === "checkbox") {
+    const selections = r.selected_options || (r.selected_option !== null ? [r.selected_option] : []);
+    return selections.map((i) => r.options[i] || `選択肢${i}`).join(", ") || "(未回答)";
+  }
+  if (qt === "scale") {
+    const val = r.selected_option;
+    if (val === null) return "(未回答)";
+    const labels = [];
+    if (r.scale_config?.minLabel) labels.push(`${r.scale_config.min}=${r.scale_config.minLabel}`);
+    if (r.scale_config?.maxLabel) labels.push(`${r.scale_config.max}=${r.scale_config.maxLabel}`);
+    return `${val}` + (labels.length > 0 ? ` (${labels.join(", ")})` : "");
+  }
+  // radio / dropdown
+  if (r.selected_option === null) return "(未回答)";
+  if (r.selected_option >= (r.options?.length || 0) && r.free_text) return r.free_text;
+  return r.options?.[r.selected_option] ?? `選択肢 ${r.selected_option}`;
 }
 
 // --- 設定タブ (Editable) ---

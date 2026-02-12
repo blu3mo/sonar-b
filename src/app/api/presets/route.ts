@@ -3,11 +3,23 @@ import { createClient } from "@/lib/supabase/server";
 import { z } from "zod";
 import { randomBytes } from "crypto";
 
+const scaleConfigSchema = z.object({
+  min: z.number().int(),
+  max: z.number().int(),
+  minLabel: z.string().max(50).optional(),
+  maxLabel: z.string().max(50).optional(),
+});
+
 const fixedQuestionSchema = z.object({
   statement: z.string().min(1).max(500),
   detail: z.string().max(1000),
-  options: z.array(z.string().max(200)).min(2).max(10),
-});
+  options: z.array(z.string().max(200)).max(10).default([]),
+  question_type: z.enum(['radio', 'checkbox', 'dropdown', 'text', 'textarea', 'scale']).default('radio'),
+  scale_config: scaleConfigSchema.nullable().optional(),
+}).refine((q) => {
+  if (q.question_type === 'text' || q.question_type === 'textarea') return true;
+  return q.options.length >= 2;
+}, { message: "選択肢は2つ以上必要です" });
 
 const createPresetSchema = z.object({
   title: z.string().min(1, "タイトルを入力してください").max(200),

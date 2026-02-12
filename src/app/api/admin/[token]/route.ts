@@ -14,8 +14,18 @@ const updatePresetSchema = z.object({
       z.object({
         statement: z.string().min(1).max(500),
         detail: z.string().max(1000),
-        options: z.array(z.string().max(200)).min(2).max(10),
-      })
+        options: z.array(z.string().max(200)).max(10).default([]),
+        question_type: z.enum(['radio', 'checkbox', 'dropdown', 'text', 'textarea', 'scale']).default('radio'),
+        scale_config: z.object({
+          min: z.number().int(),
+          max: z.number().int(),
+          minLabel: z.string().max(50).optional(),
+          maxLabel: z.string().max(50).optional(),
+        }).nullable().optional(),
+      }).refine((q) => {
+        if (q.question_type === 'text' || q.question_type === 'textarea') return true;
+        return q.options.length >= 2;
+      }, { message: "選択肢は2つ以上必要です" })
     )
     .max(50)
     .optional(),
@@ -71,9 +81,14 @@ export async function GET(
       session_id: string;
       question_index: number;
       statement: string;
-      selected_option: number;
+      selected_option: number | null;
       options: string[];
       free_text: string | null;
+      source: string;
+      question_type: string;
+      scale_config: { min: number; max: number; minLabel?: string; maxLabel?: string } | null;
+      selected_options: number[] | null;
+      answer_text: string | null;
     }> = [];
 
     if (sessionIds.length > 0) {
@@ -83,10 +98,15 @@ export async function GET(
           session_id,
           selected_option,
           free_text,
+          selected_options,
+          answer_text,
           question:questions!question_id (
             question_index,
             statement,
-            options
+            options,
+            source,
+            question_type,
+            scale_config
           )
         `)
         .in("session_id", sessionIds)
@@ -99,9 +119,14 @@ export async function GET(
             session_id: a.session_id as string,
             question_index: (question?.question_index as number) ?? 0,
             statement: (question?.statement as string) ?? "",
-            selected_option: a.selected_option as number,
+            selected_option: (a.selected_option as number | null) ?? null,
             options: (question?.options as string[]) ?? [],
             free_text: a.free_text as string | null,
+            source: (question?.source as string) ?? "ai",
+            question_type: (question?.question_type as string) ?? "radio",
+            scale_config: (question?.scale_config as { min: number; max: number; minLabel?: string; maxLabel?: string } | null) ?? null,
+            selected_options: (a.selected_options as number[] | null) ?? null,
+            answer_text: (a.answer_text as string | null) ?? null,
           };
         });
       }
