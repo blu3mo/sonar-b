@@ -32,7 +32,9 @@ export async function POST(request: NextRequest) {
       data: { user },
     } = await supabase.auth.getUser();
 
-    const { data, error } = await supabase.rpc("create_preset_with_token", {
+    // Build RPC params — only include p_user_id if user is authenticated
+    // This ensures backward compatibility before migration 012 is applied
+    const rpcParams: Record<string, unknown> = {
       p_slug: generateSlug(),
       p_title: validated.title,
       p_purpose: validated.purpose,
@@ -42,8 +44,18 @@ export async function POST(request: NextRequest) {
       p_og_description: validated.ogDescription || null,
       p_key_questions: validated.keyQuestions || [],
       p_report_target: validated.reportTarget || 25,
+    };
+
+    // Try with p_user_id first, fall back without it if function doesn't support it yet
+    let { data, error } = await supabase.rpc("create_preset_with_token", {
+      ...rpcParams,
       p_user_id: user?.id || null,
     });
+
+    if (error?.code === "PGRST202") {
+      // Function doesn't have p_user_id param yet — call without it
+      ({ data, error } = await supabase.rpc("create_preset_with_token", rpcParams));
+    }
 
     if (error || !data || data.length === 0) {
       console.error("Preset creation error:", error);
